@@ -7,17 +7,17 @@ main() {
 
   # make temp working dir #
   mktemp -d /tmp/resize.XXXXXXXXXXXX > /dev/null
-  tmpdir="$(cd /tmp/resize.*;pwd)"
+  tmpdir="$(find /tmp -mindepth 1 -prune -type d -name 'resize.*')"
 
   # set defualt output dir #
-  mkdir -p $HOME/FFVII_FRP
+  mkdir -p "$HOME/FFVII_FRP"
   outdir="$HOME/FFVII_FRP"
 
   # set default input dir #
   indir="$HOME/FFVII_fields"
 
   # an array of scene dirs in $indir #
-  scenes=($(cd $indir; find ./ -mindepth 1 -type d))
+  scenes=("$(ls "$indir")")
 
   # the composite of working layers #
   composite="$tmpdir/composite.png"
@@ -29,28 +29,28 @@ main() {
   # set trap for clean exit #
   trap finish EXIT
 
-  cd $indir
+  cd "$indir" || exit
 
   for scene in ${scenes[@]}
     do
       # make scene dir #
       outscene="$outdir/$scene"
-      mkdir -p $outscene
+      mkdir -p "$outscene"
 
-      cd $scene
+      cd "$scene" || exit
 
       # capture size of base image #
-      size=$(identify $(ls *000.png) | awk '{print $3}')
+      size=$(identify "$(ls -- *000.png)" | awk '{print $3}')
 
       # arrays for main layers and auxilary layers #
-      mLays=($(ls *_000001*.png *000.png))
+      mLays=($(ls -- *_000001*.png *000.png))
       aLays=($(ls !(*_000001*|*_000[6-9]*|*000.)png 2&> /dev/null ))
 
       # process main layers #
       mainLay "${mLays[@]}"
 
       # if there are any aux layers handle them #
-      if [[ -n "$aLays" ]]; then
+      if [[ -n "${aLays[@]}" ]]; then
         auxLay
       fi
 
@@ -63,10 +63,10 @@ function scale {
   waifu2x-converter-cpp \
     --scale_ratio 4 \
     --model_dir \
-    $PHOTOMOD \
+    "$PHOTOMOD" \
     -m scale \
-    -i $composite \
-    -o $composite
+    -i "$composite" \
+    -o "$composite"
 }
 
 
@@ -74,17 +74,17 @@ function scale {
 function mainLay {
   files=("$@")
 
-  convert -size "$size" xc:black $composite
+  convert -size "$size" xc:black "$composite"
 
   # compose layers into single image #
   for file in ${files[@]}
     do
-      composite $file $composite $composite
+      composite "$file" "$composite" "$composite"
     done
 
   # scale and put base layer in output dir #
   scale
-  cp $composite $outscene/${files[0]}
+  cp "$composite" "$outscene/${files[0]}"
 
   # process remaining main layers from base #
   cutLayer "${files[@]}"
@@ -95,17 +95,17 @@ function mainLay {
 function auxLay {
   for aLay in ${aLays[@]}
     do
-      rm $tmpdir/*
-      convert -size "$size" xc:black $composite
+      rm "$tmpdir/*"
+      convert -size "$size" xc:black "$composite"
 
       # compose all main layers... #
       for mLay in ${mLays[@]}
         do
-          composite $mLay $composite $composite
+          composite "$mLay" "$composite" "$composite"
         done
 
       # with one aux layer #
-      composite $aLay $composite $composite
+      composite "$aLay" "$composite" "$composite"
 
       # scale the result #
       scale
@@ -131,31 +131,31 @@ function cutLayer {
       mask="$tmpdir/${files[$i]%%.png}_mask.png"
 
       # fill opacity with white; transparency with black... #
-      convert $file \
+      convert "$file" \
         -fuzz 100% \
         -fill white \
         -opaque green \
         -background black \
         -alpha remove \
-        $pbm
+        "$pbm"
 
       # produce vector trace... #
       potrace -a 0 -b gimppath -x 3.2 \
-        $pbm > $svg
+        "$pbm" > "$svg"
 
       # rasterize and remove semi-transparent pixels... #
       convert -background none \
-        $svg \
+        "$svg" \
         -channel A \
         -threshold 1% \
-        $mask
+        "$mask"
 
       # subtract from base image and place in outdir #
-      convert $composite $mask \
+      convert "$composite" "$mask" \
         -gravity center \
         -compose CopyOpacity \
         -composite -channel A \
-        -negate $outscene/$file
+        -negate "$outscene/$file"
     done
 }
 
@@ -163,23 +163,23 @@ function cutLayer {
 function noOverlap {
   files=("$@")
 
-  cd $outscene
+  cd "$outscene" || exit
 
   # ensure the base image is not processed #
   for (( i=${#files[@]}-1; i > 1; i-- ))
     do
       # return first input image minus shared pixels #
-      convert ${files[$i]} ${files[$i-1]} \
+      convert "${files[$i]}" "${files[$i-1]}" \
         -compose Change-mask \
-        -composite ${files[$i]}
+        -composite "${files[$i]}"
     done
 
-  cd -
+  cd - || exit
 }
 
 # cleanup temp dir #
 function finish {
-  rm -rf $tmpdir
+  rm -rf "$tmpdir"
 }
 
 main
