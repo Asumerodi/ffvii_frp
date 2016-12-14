@@ -13,30 +13,46 @@ main() {
   mkdir -p $HOME/FFVII_FRP
   outdir="$HOME/FFVII_FRP"
 
-  # capture size of base image #
-  size=$(identify $(ls *000.png) | awk '{print $3}')
+  # set default input dir #
+  indir="$HOME/FFVII_fields"
 
-  # arrays for main layers and auxilary layers #
-  mainLays=($(ls *_000001*.png *000.png))
-  auxLays=($(ls !(*_000001*|*_000[1-9]*|*000.)png))
+  # an array of scene dirs in $indir #
+  scenes=($(cd $indir; find ./ -mindepth 1 -type d))
 
   # the composite of working layers #
   composite="$tmpdir/composite.png"
 
 
-  ########## main logic ##########
+  ########## main loop ##########
 
 
   # set trap for clean exit #
   trap finish EXIT
 
-  # process main layers #
-  mainLay "${mainLays[@]}"
+  cd $indir
 
-  # if there are any aux layers handle them #
-  if [[ -n "$auxLays" ]]; then
-    auxLay
-  fi
+  for (( itr=0; itr < ${#scenes[@]}; itr++ ))
+    do
+      mkdir -p $outdir/${scenes[$itr]} &&
+      cd ${scenes[$itr]} &&
+
+      # capture size of base image #
+      size=$(identify $(ls *000.png) | awk '{print $3}')
+
+      # arrays for main layers and auxilary layers #
+      mainLays=($(ls *_000001*.png *000.png))
+      auxLays=($(ls !(*_000001*|*_000[6-9]*|*000.)png))
+
+      # process main layers #
+      mainLay "${mainLays[@]}" &&
+
+      # if there are any aux layers handle them #
+      if [[ -n "$auxLays" ]]; then
+        auxLay
+      fi
+
+      cd ..
+    done
 }
 
 # $PHOTOMOD is waifu2x model dir #
@@ -65,7 +81,7 @@ function mainLay {
 
   # scale and put base layer in output dir #
   scale
-  cp $composite $outdir/${files[0]}
+  cp $composite $outdir/${scenes[$itr]}/${files[0]}
 
   # process remaining main layers from base #
   cutLayer "${files[@]}"
@@ -136,7 +152,7 @@ function cutLayer {
         -gravity center \
         -compose CopyOpacity \
         -composite -channel A \
-        -negate $outdir/$file
+        -negate $outdir/${scenes[$itr]}/$file
     done
 }
 
@@ -144,7 +160,7 @@ function cutLayer {
 function noOverlap {
   files=("$@")
 
-  cd $outdir
+  cd $outdir/${scenes[$itr]}
 
   # ensure the base image is not processed #
   for (( i=${#files[@]}-1; i > 1; i-- ))
