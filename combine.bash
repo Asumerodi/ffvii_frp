@@ -3,7 +3,7 @@ shopt -s extglob
 
 main() {
   # make temp working dir
-  mktemp -d /tmp/resize.XXXXXXXXXXXX
+  mktemp -d /tmp/resize.XXXXXXXXXXXX > /dev/null
 
   # global vars
   tmpdir="$(cd /tmp/resize.*;pwd)"
