@@ -17,7 +17,7 @@ main() {
   indir="$HOME/FFVII_fields"
 
   # an array of scene dirs in $indir #
-  scenes=("$(ls "$indir")")
+  scenes=($(ls "$indir"))
 
   # the composite of working layers #
   composite="$tmpdir/composite.png"
@@ -31,7 +31,7 @@ main() {
 
   cd "$indir" || exit
 
-  for scene in ${scenes[@]}
+  for scene in "${scenes[@]}"
     do
       # make scene dir #
       outscene="$outdir/$scene"
@@ -44,7 +44,7 @@ main() {
 
       # arrays for main layers and auxilary layers #
       mLays=($(ls -- *_000001*.png *000.png))
-      aLays=($(ls !(*_000001*|*_000[6-9]*|*000.)png 2&> /dev/null ))
+      aLays=($(ls !(*_000001*|*_000[6-9]*|*000.)png 2> /dev/null))
 
       # process main layers #
       mainLay "${mLays[@]}"
@@ -77,7 +77,7 @@ function mainLay {
   convert -size "$size" xc:black "$composite"
 
   # compose layers into single image #
-  for file in ${files[@]}
+  for file in "${files[@]}"
     do
       composite "$file" "$composite" "$composite"
     done
@@ -93,13 +93,13 @@ function mainLay {
 
 # handle the auxilary layers one at a time #
 function auxLay {
-  for aLay in ${aLays[@]}
+  for aLay in "${aLays[@]}"
     do
-      rm "$tmpdir/*"
+      rm "$tmpdir"/*
       convert -size "$size" xc:black "$composite"
 
       # compose all main layers... #
-      for mLay in ${mLays[@]}
+      for mLay in "${mLays[@]}"
         do
           composite "$mLay" "$composite" "$composite"
         done
