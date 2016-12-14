@@ -31,23 +31,26 @@ main() {
 
   cd $indir
 
-  for (( itr=0; itr < ${#scenes[@]}; itr++ ))
+  for scene in ${scenes[@]}
     do
-      mkdir -p $outdir/${scenes[$itr]} &&
-      cd ${scenes[$itr]} &&
+      # make scene dir #
+      outscene="$outdir/$scene"
+      mkdir -p $outscene
+
+      cd $scene
 
       # capture size of base image #
       size=$(identify $(ls *000.png) | awk '{print $3}')
 
       # arrays for main layers and auxilary layers #
-      mainLays=($(ls *_000001*.png *000.png))
-      auxLays=($(ls !(*_000001*|*_000[6-9]*|*000.)png))
+      mLays=($(ls *_000001*.png *000.png))
+      aLays=($(ls !(*_000001*|*_000[6-9]*|*000.)png 2&> /dev/null ))
 
       # process main layers #
-      mainLay "${mainLays[@]}" &&
+      mainLay "${mLays[@]}"
 
       # if there are any aux layers handle them #
-      if [[ -n "$auxLays" ]]; then
+      if [[ -n "$aLays" ]]; then
         auxLay
       fi
 
@@ -55,7 +58,7 @@ main() {
     done
 }
 
-# $PHOTOMOD is waifu2x model dir #
+# $PHOTOMOD is waifu2x model dir held in an env var#
 function scale {
   waifu2x-converter-cpp \
     --scale_ratio 4 \
@@ -74,14 +77,14 @@ function mainLay {
   convert -size "$size" xc:black $composite
 
   # compose layers into single image #
-  for (( i=0; i < ${#files[@]}; i++ ))
+  for file in ${files[@]}
     do
-      composite ${files[$i]} $composite $composite
+      composite $file $composite $composite
     done
 
   # scale and put base layer in output dir #
   scale
-  cp $composite $outdir/${scenes[$itr]}/${files[0]}
+  cp $composite $outscene/${files[0]}
 
   # process remaining main layers from base #
   cutLayer "${files[@]}"
@@ -90,28 +93,28 @@ function mainLay {
 
 # handle the auxilary layers one at a time #
 function auxLay {
-  for (( k=0; k < ${#auxLays[@]}; k++))
+  for aLay in ${aLays[@]}
     do
       rm $tmpdir/*
       convert -size "$size" xc:black $composite
 
       # compose all main layers... #
-      for (( j=0; j < ${#mainLays[@]}; j++))
+      for mLay in ${mLays[@]}
         do
-          composite ${mainLays[$j]} $composite $composite
+          composite $mLay $composite $composite
         done
 
       # with one aux layer #
-      composite ${auxLays[$k]} $composite $composite
+      composite $aLay $composite $composite
 
       # scale the result #
       scale
 
       # first value is junk so that cutLayer loop will occur once #
-      cutLayer "junk" "${auxLays[$k]}"
+      cutLayer "junk" "$aLay"
 
       # send only three values to avoid duplicate processing #
-      noOverlap "${mainLays[@]:(-2)}" "${auxLays[$k]}"
+      noOverlap "${mLays[@]:(-2)}" "$aLay"
     done
 }
 
@@ -127,7 +130,7 @@ function cutLayer {
       svg="$tmpdir/${files[$i]%%png}svg"
       mask="$tmpdir/${files[$i]%%.png}_mask.png"
 
-      # convert original layer to black and white... #
+      # fill opacity with white; transparency with black... #
       convert $file \
         -fuzz 100% \
         -fill white \
@@ -136,11 +139,11 @@ function cutLayer {
         -alpha remove \
         $pbm
 
-      # produce upscaled vector trace... #
+      # produce vector trace... #
       potrace -a 0 -b gimppath -x 3.2 \
         $pbm > $svg
 
-      # rasterize and remove semi transparent pixels... #
+      # rasterize and remove semi-transparent pixels... #
       convert -background none \
         $svg \
         -channel A \
@@ -152,7 +155,7 @@ function cutLayer {
         -gravity center \
         -compose CopyOpacity \
         -composite -channel A \
-        -negate $outdir/${scenes[$itr]}/$file
+        -negate $outscene/$file
     done
 }
 
@@ -160,12 +163,12 @@ function cutLayer {
 function noOverlap {
   files=("$@")
 
-  cd $outdir/${scenes[$itr]}
+  cd $outscene
 
   # ensure the base image is not processed #
   for (( i=${#files[@]}-1; i > 1; i-- ))
     do
-      # return input image minus share pixels #
+      # return first input image minus shared pixels #
       convert ${files[$i]} ${files[$i-1]} \
         -compose Change-mask \
         -composite ${files[$i]}
