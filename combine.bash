@@ -1,26 +1,27 @@
 #! /bin/bash
-shopt -s extglob
+set -eu -o pipefail
+shopt -s extglob nullglob
+
 
 main() {
   ########## global vars ##########
 
 
   # make temp working dir #
-  mktemp -d /tmp/resize.XXXXXXXXXXXX > /dev/null
-  tmpdir="$(find /tmp -mindepth 1 -prune -type d -name 'resize.*')"
+  tmpdir="$(mktemp -d /tmp/resize.XXXXXXXXXXXX)/"
 
   # set defualt output dir #
-  mkdir -p "$HOME/FFVII_FRP"
-  outdir="$HOME/FFVII_FRP"
+  outdir="$HOME/FFVII_FRP/"
+  mkdir -p "$outdir"
 
   # set default input dir #
-  indir="$HOME/FFVII_fields"
+  indir="$HOME/FFVII_fields/"
 
   # an array of scene dirs in $indir #
-  scenes=($(ls "$indir"))
+  scenes=("$indir"*/)
 
   # the composite of working layers #
-  composite="$tmpdir/composite.png"
+  composite="${tmpdir}composite.png"
 
 
   ########## main loop ##########
@@ -29,22 +30,22 @@ main() {
   # set trap for clean exit #
   trap finish EXIT
 
-  cd "$indir" || exit
-
   for scene in "${scenes[@]}"
     do
-      # make scene dir #
-      outscene="$outdir/$scene"
+      # get basename without calling basename #
+      outscene="$outdir${scene#${scene%/*/}/}"
       mkdir -p "$outscene"
 
-      cd "$scene" || exit
+      cd "$scene"
 
       # capture size of base image #
-      size=$(identify "$(ls -- *000.png)" | awk '{print $3}')
+      size=$(identify -format "%wx%h" -- *000.png)
 
       # arrays for main layers and auxilary layers #
-      mLays=($(ls -- *_000001*.png *000.png))
-      aLays=($(ls !(*_000001*|*_000[6-9]*|*000.)png 2> /dev/null))
+      mLays=( @(*000001*|*000).png )
+      echo "${mLays[@]}"
+      aLays=( !(*_000001*|*_000[6-9]*|*000.)png )
+      echo "${aLays[@]}"
 
       # process main layers #
       mainLay "${mLays[@]}"
@@ -53,8 +54,6 @@ main() {
       if [[ -n "${aLays[@]}" ]]; then
         auxLay
       fi
-
-      cd ..
     done
 }
 
@@ -66,7 +65,7 @@ function scale {
     "$PHOTOMOD" \
     -m scale \
     -i "$composite" \
-    -o "$composite"
+    -o "$composite" > /dev/null
 }
 
 
@@ -84,7 +83,7 @@ function mainLay {
 
   # scale and put base layer in output dir #
   scale
-  cp "$composite" "$outscene/${files[0]}"
+  cp "$composite" "$outscene${files[0]}"
 
   # process remaining main layers from base #
   cutLayer "${files[@]}"
@@ -95,7 +94,7 @@ function mainLay {
 function auxLay {
   for aLay in "${aLays[@]}"
     do
-      rm "$tmpdir"/*
+      rm "$tmpdir"*
       convert -size "$size" xc:black "$composite"
 
       # compose all main layers... #
@@ -126,9 +125,9 @@ function cutLayer {
     do
       # vars for current and temp files #
       file=${files[$i]}
-      pbm="$tmpdir/${files[$i]%%png}pbm"
-      svg="$tmpdir/${files[$i]%%png}svg"
-      mask="$tmpdir/${files[$i]%%.png}_mask.png"
+      pbm="$tmpdir${files[$i]%%png}pbm"
+      svg="$tmpdir${files[$i]%%png}svg"
+      mask="$tmpdir${files[$i]%%.png}_mask.png"
 
       # fill opacity with white; transparency with black... #
       convert "$file" \
@@ -155,7 +154,7 @@ function cutLayer {
         -gravity center \
         -compose CopyOpacity \
         -composite -channel A \
-        -negate "$outscene/$file"
+        -negate "$outscene$file"
     done
 }
 
@@ -163,23 +162,19 @@ function cutLayer {
 function noOverlap {
   files=("$@")
 
-  cd "$outscene" || exit
-
   # ensure the base image is not processed #
   for (( i=${#files[@]}-1; i > 1; i-- ))
     do
       # return first input image minus shared pixels #
-      convert "${files[$i]}" "${files[$i-1]}" \
+      convert "$outscene${files[$i]}" "$outscene${files[$i-1]}" \
         -compose Change-mask \
-        -composite "${files[$i]}"
+        -composite "$outscene${files[$i]}"
     done
-
-  cd - || exit
 }
 
 # cleanup temp dir #
 function finish {
-  rm -rf "$tmpdir"
+  rm -r "$tmpdir"
 }
 
 main
