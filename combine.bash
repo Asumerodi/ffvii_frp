@@ -1,11 +1,12 @@
 #! /bin/bash
 set -eu -o pipefail
-shopt -s extglob nullglob
-
+shopt -s extglob nullglob failglob
 
 main() {
-  ########## global vars ##########
+  # Check for installed depencies first #
+  depCheck
 
+  ########## global vars ##########
 
   # make temp working dir #
   tmpdir="$(mktemp -d /tmp/resize.XXXXXXXXXXXX)/"
@@ -23,9 +24,7 @@ main() {
   # the composite of working layers #
   composite="${tmpdir}composite.png"
 
-
   ########## main loop ##########
-
 
   # set trap for clean exit #
   trap finish EXIT
@@ -43,7 +42,9 @@ main() {
 
       # arrays for main layers and auxilary layers #
       mLays=( @(*000001*|*000).png )
+      shopt -u failglob
       aLays=( !(*_000001*|*_000[6-9]*|*000.)png )
+      shopt -s failglob
 
       # process main layers #
       mainLay "${mLays[@]}"
@@ -53,6 +54,24 @@ main() {
         auxLay
       fi
     done
+}
+
+# simple dependency check #
+function depCheck {
+  local -a deps
+  deps=(
+  "waifu2x-converter-cpp"
+  "convert"
+  "composite"
+  "potrace"
+  )
+
+  for dep in "${deps[@]}"; do
+    if [[ -z $(command -v "$dep") ]]
+    then
+      printf "Error: '%s' not found\n" "$dep" >&2 && exit 1
+    fi
+  done
 }
 
 # $PHOTOMOD is waifu2x model dir held in an env var#
