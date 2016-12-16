@@ -43,9 +43,7 @@ main() {
 
       # arrays for main layers and auxilary layers #
       mLays=( @(*000001*|*000).png )
-      echo "${mLays[@]}"
       aLays=( !(*_000001*|*_000[6-9]*|*000.)png )
-      echo "${aLays[@]}"
 
       # process main layers #
       mainLay "${mLays[@]}"
