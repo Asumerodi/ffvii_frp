@@ -47,7 +47,7 @@ main() {
       shopt -s failglob
 
       # process main layers #
-      mainLay "${mLays[@]}"
+      mainLay "mLays"
 
       # if there are any aux layers handle them #
       if [[ -n "${aLays[@]}" ]]; then
@@ -88,7 +88,8 @@ function scale {
 
 # produces the main layers #
 function mainLay {
-  files=("$@")
+  local -n files
+  files="$1"
 
   convert -size "$size" xc:black "$composite"
 
@@ -103,7 +104,7 @@ function mainLay {
   cp "$composite" "$outscene${files[0]}"
 
   # process remaining main layers from base #
-  cutLayer "${files[@]}"
+  cutLayer "${!files}"
   noOverlap "${files[@]}"
 }
 
@@ -126,8 +127,7 @@ function auxLay {
       # scale the result #
       scale
 
-      # first value is junk so that cutLayer loop will occur once #
-      cutLayer "junk" "$aLay"
+      cutLayer "aLay"
 
       # send only three values to avoid duplicate processing #
       noOverlap "${mLays[@]:(-2)}" "$aLay"
@@ -136,47 +136,51 @@ function auxLay {
 
 # produce the enlarged layers #
 function cutLayer {
-  files=("$@")
+  local -n files
+  files="$1"
 
-  for (( i=1; i < ${#files[@]}; i++ ))
+  for file in "${files[@]}"
     do
-      # vars for current and temp files #
-      file=${files[$i]}
-      pbm="$tmpdir${files[$i]%%png}pbm"
-      svg="$tmpdir${files[$i]%%png}svg"
-      mask="$tmpdir${files[$i]%%.png}_mask.png"
+      if [[ "$file" != *000.png ]]
+        then
+          # vars for current and temp files #
+          pbm="$tmpdir${file%png}pbm"
+          svg="$tmpdir${file%png}svg"
+          mask="$tmpdir${file%.png}_mask.png"
 
-      # fill opacity with white; transparency with black... #
-      convert "$file" \
-        -fuzz 100% \
-        -fill white \
-        -opaque green \
-        -background black \
-        -alpha remove \
-        "$pbm"
+          # fill opacity with white; transparency with black... #
+          convert "$file" \
+            -fuzz 100% \
+            -fill white \
+            -opaque green \
+            -background black \
+            -alpha remove \
+            "$pbm"
 
-      # produce vector trace... #
-      potrace -a 0 -b gimppath -x 3.2 \
-        "$pbm" > "$svg"
+          # produce vector trace... #
+          potrace -a 0 -b gimppath -x 3.2 \
+            "$pbm" > "$svg"
 
-      # rasterize and remove semi-transparent pixels... #
-      convert -background none \
-        "$svg" \
-        -channel A \
-        -threshold 1% \
-        "$mask"
+          # rasterize and remove semi-transparent pixels... #
+          convert -background none \
+            "$svg" \
+            -channel A \
+            -threshold 1% \
+            "$mask"
 
-      # subtract from base image and place in outdir #
-      convert "$composite" "$mask" \
-        -gravity center \
-        -compose CopyOpacity \
-        -composite -channel A \
-        -negate "$outscene$file"
+          # subtract from base image and place in outdir #
+          convert "$composite" "$mask" \
+            -gravity center \
+            -compose CopyOpacity \
+            -composite -channel A \
+            -negate "$outscene$file"
+      fi
     done
 }
 
 # ensure layers do not share pixels #
 function noOverlap {
+  local -a files
   files=("$@")
 
   # ensure the base image is not processed #
