@@ -1,6 +1,6 @@
 #! /bin/bash
 set -eu -o pipefail
-shopt -s extglob nullglob failglob
+shopt -s extglob nullglob globstar
 
 main() {
   # Check for installed depencies first #
@@ -9,20 +9,22 @@ main() {
   ########## global vars ##########
 
   # make temp working dir #
-  tmpdir="$(mktemp -d /tmp/resize.XXXXXXXXXXXX)/"
+  local -r tmpdir="$(mktemp -d /tmp/resize.XXXXXXXXXXXX)/"
 
   # set defualt output dir #
-  outdir="$HOME/FFVII_FRP/"
+  local -r outdir="$HOME/FFVII_FRP/"
   mkdir -p "$outdir"
 
   # set default input dir #
-  indir="$HOME/FFVII_fields/"
+  local -r indir="$HOME/FFVII_fields/"
 
-  # an array of scene dirs in $indir #
-  scenes=("$indir"*/)
+  # make an array of scene dirs in $indir #
+  local -a -r scenes=("${indir}"[a-z]*_batch/)
 
-  # the composite of working layers #
-  composite="${tmpdir}composite.png"
+  # the composites of working layers #
+  local -r composite="${tmpdir}composite.png"
+  local -r comp_out="${composite%.png}_out.png"
+  local -r comp_aux="${tmpdir}comp_aux.png"
 
   ########## main loop ##########
 
@@ -31,28 +33,33 @@ main() {
 
   for scene in "${scenes[@]}"
     do
-      # get basename without calling basename #
-      outscene="$outdir${scene#${scene%/*/}/}"
+      # get basename without calling external basename with parameter expn #
+      local outscene="$outdir${scene#${scene%/*/}/}"
       mkdir -p "$outscene"
 
       cd "$scene"
 
       # capture size of base image #
+      local size
       size=$(identify -format "%wx%h" -- *000.png)
 
-      # arrays for main layers and auxilary layers #
-      mLays=( @(*000001*|*000).png )
-      shopt -u failglob
-      aLays=( !(*_000001*|*_000[6-9]*|*000.)png )
-      shopt -s failglob
+      # fairly explicit globbing to weed out false positives #
+      local -a mLays aLays
+      mLays=( [a-z]*_[0-2]_000@(001*|*000).png )
+      aLays=( [a-z]*_[0-2]_000!(001*|[6-9]*|*000.)png )
 
       # process main layers #
+      if [[ -n "${mLays[@]}" ]]; then
       mainLay "mLays"
+      fi
 
       # if there are any aux layers handle them #
       if [[ -n "${aLays[@]}" ]]; then
         auxLay
       fi
+
+      # cleanup temp dir #
+      rm "$tmpdir"*
     done
 }
 
@@ -63,6 +70,7 @@ function depCheck {
   "waifu2x-converter-cpp"
   "convert"
   "composite"
+  "identify"
   "potrace"
   )
 
@@ -76,13 +84,23 @@ function depCheck {
 
 # $PHOTOMOD is waifu2x model dir held in an env var#
 function scale {
-  waifu2x-converter-cpp \
-    --scale_ratio 4 \
-    --model_dir \
-    "$PHOTOMOD" \
-    -m scale \
-    -i "$composite" \
-    -o "$composite" > /dev/null
+  local output input
+
+  if [[ -a "$comp_aux" ]]
+    then
+      output="$comp_aux"
+      input="$comp_aux"
+    else
+      output="$comp_out"
+      input="$composite"
+  fi
+      waifu2x-converter-cpp \
+        --scale_ratio 4 \
+        --model_dir \
+        "$PHOTOMOD" \
+        -m scale \
+        -i "$input" \
+        -o "$output" > /dev/null
 }
 
 
@@ -101,7 +119,7 @@ function mainLay {
 
   # scale and put base layer in output dir #
   scale
-  cp "$composite" "$outscene${files[0]}"
+  cp "$comp_out" "$outscene${files[0]}"
 
   # process remaining main layers from base #
   cutLayer "${!files}"
@@ -112,17 +130,8 @@ function mainLay {
 function auxLay {
   for aLay in "${aLays[@]}"
     do
-      rm "$tmpdir"*
-      convert -size "$size" xc:black "$composite"
-
-      # compose all main layers... #
-      for mLay in "${mLays[@]}"
-        do
-          composite "$mLay" "$composite" "$composite"
-        done
-
-      # with one aux layer #
-      composite "$aLay" "$composite" "$composite"
+      # compose the main composite with one aux layer #
+      composite "$aLay" "$composite" "$comp_aux"
 
       # scale the result #
       scale
@@ -137,6 +146,7 @@ function auxLay {
 # produce the enlarged layers #
 function cutLayer {
   local -n files
+  local pbm svg mask input
   files="$1"
 
   for file in "${files[@]}"
@@ -169,7 +179,14 @@ function cutLayer {
             "$mask"
 
           # subtract from base image and place in outdir #
-          convert "$composite" "$mask" \
+          if [[ -a "$comp_aux" ]]
+            then
+              input="$comp_aux"
+            else
+              input="$comp_out"
+          fi
+
+          convert "$input" "$mask" \
             -gravity center \
             -compose CopyOpacity \
             -composite -channel A \
